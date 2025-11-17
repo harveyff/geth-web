@@ -69,11 +69,11 @@
               <div v-if="error" class="result-content error-text">{{ error }}</div>
               <div v-else>
                 <div class="result-section">
-                  <div class="result-label">原始结果 (Hex):</div>
+                  <div class="result-label">Original Result (Hex):</div>
                   <pre class="result-content">{{ result }}</pre>
                 </div>
                 <div v-if="convertedResult" class="result-section q-mt-md">
-                  <div class="result-label">转换结果 (Decimal):</div>
+                  <div class="result-label">Converted Result (Decimal):</div>
                   <pre class="result-content converted">{{ convertedResult }}</pre>
                 </div>
               </div>
