@@ -66,7 +66,17 @@
                 {{ error ? "Error" : "Result" }}
               </div>
               <q-separator class="q-mb-sm" />
-              <pre class="result-content">{{ error || result }}</pre>
+              <div v-if="error" class="result-content error-text">{{ error }}</div>
+              <div v-else>
+                <div class="result-section">
+                  <div class="result-label">原始结果 (Hex):</div>
+                  <pre class="result-content">{{ result }}</pre>
+                </div>
+                <div v-if="convertedResult" class="result-section q-mt-md">
+                  <div class="result-label">转换结果 (Decimal):</div>
+                  <pre class="result-content converted">{{ convertedResult }}</pre>
+                </div>
+              </div>
             </q-card-section>
             <q-card-actions v-if="result || error">
               <q-btn
@@ -78,8 +88,16 @@
               />
               <q-btn
                 flat
-                label="Copy"
+                label="Copy Original"
                 @click="copyResult"
+                color="primary"
+                size="sm"
+              />
+              <q-btn
+                v-if="convertedResult"
+                flat
+                label="Copy Converted"
+                @click="copyConverted"
                 color="primary"
                 size="sm"
               />
@@ -109,6 +127,7 @@ const props = defineProps({
 const methodName = ref("");
 const paramsJson = ref("[]");
 const result = ref("");
+const convertedResult = ref("");
 const error = ref("");
 const isLoading = ref(false);
 
@@ -230,6 +249,7 @@ const callRpc = async () => {
         response = await provider.send(methodName.value, params);
       }
       result.value = JSON.stringify(response, null, 2);
+      convertedResult.value = convertResult(response, methodName.value);
     } catch (sendError) {
       // 检查是否是浏览器扩展导致的 private field 错误
       const errorStr = sendError ? (
@@ -287,29 +307,124 @@ const callRpc = async () => {
           if (data.error) {
             error.value = `RPC Error: ${data.error.message || JSON.stringify(data.error)}`;
             result.value = "";
+            convertedResult.value = "";
           } else {
             result.value = JSON.stringify(data.result, null, 2);
+            convertedResult.value = convertResult(data.result, methodName.value);
           }
         } catch (fetchError) {
           error.value = `Failed to call RPC via fetch: ${fetchError.message || String(fetchError)}`;
           result.value = "";
+          convertedResult.value = "";
         }
       } else {
         // 其他错误直接抛出
         error.value = sendError.message || String(sendError);
         result.value = "";
+        convertedResult.value = "";
       }
     }
   } catch (err) {
     error.value = err.message || String(err);
     result.value = "";
+    convertedResult.value = "";
   } finally {
     isLoading.value = false;
   }
 };
 
+// 转换结果函数
+const convertResult = (data, method) => {
+  if (!data) return "";
+  
+  try {
+    // 如果是字符串，尝试解析
+    if (typeof data === 'string') {
+      // 检查是否是16进制
+      if (data.startsWith('0x') || data.startsWith('0X')) {
+        return convertHexValue(data, method);
+      }
+      return data;
+    }
+    
+    // 如果是对象，递归处理
+    if (typeof data === 'object') {
+      if (Array.isArray(data)) {
+        const converted = data.map(item => {
+          if (typeof item === 'string' && (item.startsWith('0x') || item.startsWith('0X'))) {
+            return convertHexValue(item, method);
+          }
+          return convertResult(item, method);
+        });
+        return converted.join('\n');
+      } else {
+        const converted = {};
+        for (const [key, value] of Object.entries(data)) {
+          if (typeof value === 'string' && (value.startsWith('0x') || value.startsWith('0X'))) {
+            // 对于特定字段，使用相应的方法类型
+            let fieldMethod = method;
+            if (key === 'balance' || key === 'value') {
+              fieldMethod = 'eth_getBalance';
+            } else if (key === 'gasPrice') {
+              fieldMethod = 'eth_gasPrice';
+            } else if (key === 'nonce') {
+              fieldMethod = 'eth_getTransactionCount';
+            } else if (key === 'number' || key === 'blockNumber') {
+              fieldMethod = 'eth_blockNumber';
+            }
+            converted[key] = convertHexValue(value, fieldMethod);
+          } else {
+            converted[key] = convertResult(value, method);
+          }
+        }
+        return JSON.stringify(converted, null, 2);
+      }
+    }
+    
+    return String(data);
+  } catch (e) {
+    return "";
+  }
+};
+
+// 转换16进制值
+const convertHexValue = (hexValue, method) => {
+  if (!hexValue || !hexValue.startsWith('0x')) {
+    return hexValue;
+  }
+  
+  try {
+    const bigIntValue = BigInt(hexValue);
+    
+    // 根据方法类型决定转换方式
+    if (method === 'eth_getBalance') {
+      // 余额转换为 ETH (除以 10^18)
+      const weiPerEth = BigInt('1000000000000000000'); // 10^18
+      const ethValue = Number(bigIntValue) / Number(weiPerEth);
+      return `${bigIntValue.toString(10)} Wei\n${ethValue.toFixed(18)} ETH`;
+    } else if (method === 'eth_getTransactionCount') {
+      // nonce 直接显示为10进制
+      return bigIntValue.toString(10);
+    } else if (method === 'eth_blockNumber' || method === 'net_peerCount') {
+      // 区块号和节点数直接转换为10进制
+      return bigIntValue.toString(10);
+    } else if (method === 'eth_gasPrice') {
+      // Gas 价格转换为 Gwei
+      const weiPerGwei = BigInt('1000000000'); // 10^9
+      const gweiValue = Number(bigIntValue) / Number(weiPerGwei);
+      return `${bigIntValue.toString(10)} Wei\n${gweiValue.toFixed(9)} Gwei`;
+    } else {
+      // 默认转换为10进制
+      return bigIntValue.toString(10);
+    }
+  } catch (e) {
+    return hexValue;
+  }
+};
+
 const clearResult = () => {
   result.value = "";
+  convertedResult.value = "";
   error.value = "";
 };
 
@@ -320,6 +435,19 @@ const copyResult = () => {
       $q.notify({
         type: "positive",
         message: "Copied to clipboard",
+        position: "top",
+        timeout: 1000,
+      });
+    });
+  }
+};
+
+const copyConverted = () => {
+  if (navigator.clipboard && convertedResult.value) {
+    navigator.clipboard.writeText(convertedResult.value).then(() => {
+      $q.notify({
+        type: "positive",
+        message: "Converted result copied to clipboard",
         position: "top",
         timeout: 1000,
       });
