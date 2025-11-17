@@ -95,11 +95,11 @@
 <script>
 import { defineComponent, ref, computed, onMounted } from "vue";
 import EthereumInfo from "components/EthereumInfo.vue";
-import OptionTitle from "src/components/OptionTitle.vue";
-import NodeInfoItem from "src/components/NodeInfoItem.vue";
-import BaseData from "src/components/BaseData.vue";
-import EndPoint from "src/components/EndPoint.vue";
-import RpcCaller from "src/components/RpcCaller.vue";
+import OptionTitle from "components/OptionTitle.vue";
+import NodeInfoItem from "components/NodeInfoItem.vue";
+import BaseData from "components/BaseData.vue";
+import EndPoint from "components/EndPoint.vue";
+import RpcCaller from "components/RpcCaller.vue";
 
 import { useRouter } from "vue-router";
 import { ethers } from "ethers";
