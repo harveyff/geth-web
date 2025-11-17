@@ -162,6 +162,58 @@ export default defineComponent({
       );
     });
 
+    const fetchData = (methodName, valueRef, params = []) => {
+      return new Promise(async (resolve, reject) => {
+        try {
+          if (!jrp.value) {
+            reject(new Error("RPC provider not initialized"));
+            return;
+          }
+          let result;
+          try {
+            if (params.length > 0) {
+              result = await jrp.value.send(methodName, params);
+            } else {
+              result = await jrp.value.send(methodName);
+            }
+            valueRef.value = result;
+            resolve();
+          } catch (sendError) {
+            // 忽略浏览器扩展相关的错误
+            if (sendError && sendError.message && sendError.message.includes("private field")) {
+              console.warn("Browser extension error ignored:", sendError);
+              // 尝试使用 fetch 直接调用 RPC
+              try {
+                const response = await fetch(rpc.value, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    jsonrpc: "2.0",
+                    method: methodName,
+                    params: params,
+                    id: 1,
+                  }),
+                });
+                const data = await response.json();
+                if (data.error) {
+                  reject(new Error(data.error.message || "RPC error"));
+                } else {
+                  valueRef.value = data.result;
+                  resolve();
+                }
+              } catch (fetchError) {
+                reject(fetchError);
+              }
+            } else {
+              reject(sendError);
+            }
+          }
+        } catch (error) {
+          reject(error);
+        }
+      });
+    };
+
     let data = [
       ["blockNumber", valueBlockNumberShow, "bg-warning"],
       ["blockTime", valueBlockTime, "bg-secondary"],
@@ -174,30 +226,20 @@ export default defineComponent({
       ["rpc", rpc, "bg-primary"],
     ];
 
-      const fetchData = (methodName, valueRef) => {
-      return new Promise(async (resolve, reject) => {
-        try {
-          if (!jrp.value) {
-            reject(new Error("RPC provider not initialized"));
-            return;
-          }
-          let result = await jrp.value.send(methodName);
-          valueRef.value = result;
-          resolve();
-        } catch (error) {
-          reject(error);
-        }
-      });
-    };
-
     onMounted(async () => {
-      rpc.value = `https://${window.location.host}/rpc-http/`;
+      try {
+        rpc.value = `https://${window.location.host}/rpc-http/`;
 
-      // rpc.value = "https://bsc-dataseed2.ninicoin.io";
-      // rpc.value = "https://blockchain2.byte-trade.com:31267/eth-mainnet";
+        // rpc.value = "https://bsc-dataseed2.ninicoin.io";
+        // rpc.value = "https://blockchain2.byte-trade.com:31267/eth-mainnet";
 
-      jrp.value = new ethers.JsonRpcProvider(rpc.value);
-      fetchData("web3_clientVersion", valueClientVersion).then(() => {
+        // 初始化 provider
+        jrp.value = new ethers.JsonRpcProvider(rpc.value);
+        
+        // 等待 provider 准备就绪
+        await jrp.value.getNetwork().catch(() => {});
+
+        fetchData("web3_clientVersion", valueClientVersion).then(() => {
         let matchResult = extract.clientVersionInfo(valueClientVersion.value);
         valueClientVersion.value = matchResult;
       });
@@ -271,6 +313,9 @@ export default defineComponent({
           });
         }
       });
+      } catch (error) {
+        console.error("Failed to initialize RPC provider:", error);
+      }
     });
 
     return {
