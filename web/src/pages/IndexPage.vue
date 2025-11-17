@@ -288,7 +288,7 @@ export default defineComponent({
               const isPrivateFieldError = 
                 (sendError && sendError.message && sendError.message.includes("private field")) ||
                 (sendError && sendError.toString && sendError.toString().includes("private field")) ||
-                (sendError && sendError.stack && sendError.stack.includes("private field"));
+                (sendError && sendError.name === "TypeError");
               
               if (isPrivateFieldError) {
                 try {

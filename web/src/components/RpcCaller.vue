@@ -195,6 +195,17 @@ const callRpc = async () => {
     return;
   }
 
+  if (!methodName.value) {
+    error.value = "Please select or enter a method name";
+    $q.notify({
+      type: "negative",
+      message: "Method name is required",
+      position: "top",
+      timeout: 2000,
+    });
+    return;
+  }
+
   isLoading.value = true;
   result.value = "";
   error.value = "";
@@ -202,17 +213,93 @@ const callRpc = async () => {
   try {
     let params = [];
     if (paramsJson.value.trim()) {
-      params = JSON.parse(paramsJson.value);
+      try {
+        params = JSON.parse(paramsJson.value);
+      } catch (parseError) {
+        error.value = `Invalid JSON parameters: ${parseError.message}`;
+        isLoading.value = false;
+        return;
+      }
     }
 
     let response;
-    if (params.length === 0) {
-      response = await provider.send(methodName.value);
-    } else {
-      response = await provider.send(methodName.value, params);
+    try {
+      if (params.length === 0) {
+        response = await provider.send(methodName.value);
+      } else {
+        response = await provider.send(methodName.value, params);
+      }
+      result.value = JSON.stringify(response, null, 2);
+    } catch (sendError) {
+      // 检查是否是浏览器扩展导致的 private field 错误
+      const errorStr = sendError ? (
+        (sendError.message || '') + ' ' + 
+        (sendError.toString ? sendError.toString() : '') + ' ' +
+        (sendError.stack || '')
+      ).toLowerCase() : '';
+      
+      const isPrivateFieldError = errorStr.includes("private field") || 
+                                  errorStr.includes("cannot read");
+      
+      console.log("Send error detected:", {
+        error: sendError,
+        errorStr: errorStr,
+        isPrivateFieldError: isPrivateFieldError
+      });
+      
+      if (isPrivateFieldError) {
+        console.warn("Browser extension error detected, using direct fetch:", sendError);
+        // 使用 fetch 直接调用 RPC
+        try {
+          // 获取 RPC URL（从 provider 或使用默认值）
+          let rpcUrl = `https://${window.location.host}/rpc-http/`;
+          
+          // 尝试从 provider 获取 URL
+          if (provider && provider.connection) {
+            if (typeof provider.connection === 'string') {
+              rpcUrl = provider.connection;
+            } else if (provider.connection.url) {
+              rpcUrl = provider.connection.url;
+            } else if (provider._getConnection && typeof provider._getConnection === 'function') {
+              try {
+                const conn = provider._getConnection();
+                if (conn && conn.url) {
+                  rpcUrl = conn.url;
+                }
+              } catch (e) {
+                // 忽略错误，使用默认 URL
+              }
+            }
+          }
+          
+          const fetchResponse = await fetch(rpcUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              jsonrpc: "2.0",
+              method: methodName.value,
+              params: params,
+              id: 1,
+            }),
+          });
+          
+          const data = await fetchResponse.json();
+          if (data.error) {
+            error.value = `RPC Error: ${data.error.message || JSON.stringify(data.error)}`;
+            result.value = "";
+          } else {
+            result.value = JSON.stringify(data.result, null, 2);
+          }
+        } catch (fetchError) {
+          error.value = `Failed to call RPC via fetch: ${fetchError.message || String(fetchError)}`;
+          result.value = "";
+        }
+      } else {
+        // 其他错误直接抛出
+        error.value = sendError.message || String(sendError);
+        result.value = "";
+      }
     }
-
-    result.value = JSON.stringify(response, null, 2);
   } catch (err) {
     error.value = err.message || String(err);
     result.value = "";
