@@ -4,46 +4,39 @@
     <div class="rpc-caller-content">
       <div class="row q-gutter-md">
         <div class="col-12">
-          <q-input
+          <q-select
             v-model="methodName"
+            :options="commonMethods"
             label="Method Name"
-            placeholder="e.g., eth_blockNumber, eth_getBalance"
+            placeholder="Select a method or type custom method name"
             outlined
             dense
+            use-input
+            input-debounce="0"
+            @new-value="createValue"
+            @filter="filterMethods"
+            @update:model-value="onMethodChange"
+            option-label="label"
+            option-value="value"
+            emit-value
+            map-options
           >
-            <template v-slot:append>
-              <q-icon name="code" />
+            <template v-slot:no-option>
+              <q-item>
+                <q-item-section class="text-grey">
+                  No methods found
+                </q-item-section>
+              </q-item>
             </template>
-            <template v-slot:hint>
-              <div class="text-caption">
-                Common methods:
-                <q-btn
-                  flat
-                  dense
-                  size="sm"
-                  label="eth_blockNumber"
-                  @click="setMethod('eth_blockNumber', '[]')"
-                  class="q-ml-xs"
-                />
-                <q-btn
-                  flat
-                  dense
-                  size="sm"
-                  label="eth_gasPrice"
-                  @click="setMethod('eth_gasPrice', '[]')"
-                  class="q-ml-xs"
-                />
-                <q-btn
-                  flat
-                  dense
-                  size="sm"
-                  label="net_peerCount"
-                  @click="setMethod('net_peerCount', '[]')"
-                  class="q-ml-xs"
-                />
-              </div>
+            <template v-slot:option="scope">
+              <q-item v-bind="scope.itemProps">
+                <q-item-section>
+                  <q-item-label>{{ scope.opt.label }}</q-item-label>
+                  <q-item-label caption>{{ scope.opt.description }}</q-item-label>
+                </q-item-section>
+              </q-item>
             </template>
-          </q-input>
+          </q-select>
         </div>
         <div class="col-12">
           <q-input
@@ -99,7 +92,7 @@
 </template>
 
 <script setup>
-import { ref } from "vue";
+import { ref, computed } from "vue";
 import OptionTitle from "components/OptionTitle.vue";
 import { useQuasar } from "quasar";
 
@@ -118,6 +111,74 @@ const paramsJson = ref("[]");
 const result = ref("");
 const error = ref("");
 const isLoading = ref(false);
+
+// 常用 RPC 方法列表
+const allMethods = [
+  { label: "eth_blockNumber", value: "eth_blockNumber", description: "Get the latest block number", params: "[]" },
+  { label: "eth_gasPrice", value: "eth_gasPrice", description: "Get the current gas price", params: "[]" },
+  { label: "net_peerCount", value: "net_peerCount", description: "Get the number of peers", params: "[]" },
+  { label: "eth_getBalance", value: "eth_getBalance", description: "Get balance of an address", params: '["0x...", "latest"]' },
+  { label: "eth_getTransactionCount", value: "eth_getTransactionCount", description: "Get transaction count (nonce)", params: '["0x...", "latest"]' },
+  { label: "eth_getBlockByNumber", value: "eth_getBlockByNumber", description: "Get block by number", params: '["0x1", false]' },
+  { label: "eth_getBlockByHash", value: "eth_getBlockByHash", description: "Get block by hash", params: '["0x...", false]' },
+  { label: "eth_getTransactionByHash", value: "eth_getTransactionByHash", description: "Get transaction by hash", params: '["0x..."]' },
+  { label: "eth_getTransactionReceipt", value: "eth_getTransactionReceipt", description: "Get transaction receipt", params: '["0x..."]' },
+  { label: "eth_call", value: "eth_call", description: "Execute a message call", params: '[{"to": "0x...", "data": "0x..."}, "latest"]' },
+  { label: "eth_estimateGas", value: "eth_estimateGas", description: "Estimate gas for a transaction", params: '[{"to": "0x...", "data": "0x..."}]' },
+  { label: "eth_syncing", value: "eth_syncing", description: "Check if node is syncing", params: "[]" },
+  { label: "net_version", value: "net_version", description: "Get network ID", params: "[]" },
+  { label: "net_listening", value: "net_listening", description: "Check if node is listening", params: "[]" },
+  { label: "web3_clientVersion", value: "web3_clientVersion", description: "Get client version", params: "[]" },
+  { label: "eth_getCode", value: "eth_getCode", description: "Get contract code", params: '["0x...", "latest"]' },
+  { label: "eth_getStorageAt", value: "eth_getStorageAt", description: "Get storage at position", params: '["0x...", "0x0", "latest"]' },
+  { label: "eth_getLogs", value: "eth_getLogs", description: "Get event logs", params: '[{"fromBlock": "latest", "toBlock": "latest"}]' },
+];
+
+const commonMethods = ref([...allMethods]);
+
+const filterMethodFunction = (val, update) => {
+  if (val === "") {
+    update(() => {
+      commonMethods.value = allMethods;
+    });
+    return;
+  }
+
+  update(() => {
+    const needle = val.toLowerCase();
+    commonMethods.value = allMethods.filter(
+      (v) => v.label.toLowerCase().indexOf(needle) > -1 || v.description.toLowerCase().indexOf(needle) > -1
+    );
+  });
+};
+
+const filterMethods = (val, update) => {
+  filterMethodFunction(val, update);
+};
+
+const createValue = (val, done) => {
+  if (val.length > 0) {
+    // 如果输入的是新值，直接使用
+    methodName.value = val;
+    done(val, "add");
+  }
+};
+
+// 监听方法选择变化，自动填充参数
+const selectedMethod = computed(() => {
+  return allMethods.find((m) => m.value === methodName.value);
+});
+
+// 当选择方法时，自动填充参数
+const onMethodChange = (value) => {
+  if (value) {
+    methodName.value = value;
+    const method = allMethods.find((m) => m.value === value);
+    if (method) {
+      paramsJson.value = method.params;
+    }
+  }
+};
 
 const callRpc = async () => {
   // 处理响应式 ref 或直接对象
