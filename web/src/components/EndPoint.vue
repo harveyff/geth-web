@@ -12,7 +12,7 @@
       color="#4EB4FF"
       label="Copy"
       class="copy"
-      icon="img:/svg/copy.svg"
+      icon="content_copy"
       no-caps
       @click="copyText"
     />

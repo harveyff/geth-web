@@ -120,7 +120,10 @@ const error = ref("");
 const isLoading = ref(false);
 
 const callRpc = async () => {
-  if (!props.rpcProvider) {
+  // 处理响应式 ref 或直接对象
+  const provider = props.rpcProvider?.value || props.rpcProvider;
+  
+  if (!provider) {
     error.value = "RPC provider not available. Please wait for the connection to be established.";
     $q.notify({
       type: "negative",
@@ -143,9 +146,9 @@ const callRpc = async () => {
 
     let response;
     if (params.length === 0) {
-      response = await props.rpcProvider.send(methodName.value);
+      response = await provider.send(methodName.value);
     } else {
-      response = await props.rpcProvider.send(methodName.value, params);
+      response = await provider.send(methodName.value, params);
     }
 
     result.value = JSON.stringify(response, null, 2);

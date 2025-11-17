@@ -121,7 +121,7 @@ export default defineComponent({
     const completedRequestsCount = ref(0);
 
     let rpc = ref("");
-    let jrp = undefined;
+    let jrp = ref(null);
     let valueClientVersion = ref(null);
     let valueNetVersion = ref(null);
     let valueListening = ref(null);
@@ -174,10 +174,14 @@ export default defineComponent({
       ["rpc", rpc, "bg-primary"],
     ];
 
-    const fetchData = (methodName, valueRef) => {
+      const fetchData = (methodName, valueRef) => {
       return new Promise(async (resolve, reject) => {
         try {
-          let result = await jrp.send(methodName);
+          if (!jrp.value) {
+            reject(new Error("RPC provider not initialized"));
+            return;
+          }
+          let result = await jrp.value.send(methodName);
           valueRef.value = result;
           resolve();
         } catch (error) {
@@ -192,7 +196,7 @@ export default defineComponent({
       // rpc.value = "https://bsc-dataseed2.ninicoin.io";
       // rpc.value = "https://blockchain2.byte-trade.com:31267/eth-mainnet";
 
-      jrp = new ethers.JsonRpcProvider(rpc.value);
+      jrp.value = new ethers.JsonRpcProvider(rpc.value);
       fetchData("web3_clientVersion", valueClientVersion).then(() => {
         let matchResult = extract.clientVersionInfo(valueClientVersion.value);
         valueClientVersion.value = matchResult;
@@ -219,9 +223,9 @@ export default defineComponent({
 
       // Fetch latest block time on mount
       fetchData("eth_blockNumber", valueBlockNumber).then(async () => {
-        if (valueBlockNumber.value) {
+        if (valueBlockNumber.value && jrp.value) {
           try {
-            let block = await jrp.send("eth_getBlockByNumber", [
+            let block = await jrp.value.send("eth_getBlockByNumber", [
               valueBlockNumber.value,
               false,
             ]);
@@ -247,9 +251,9 @@ export default defineComponent({
       window.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "visible") {
           fetchData("eth_blockNumber", valueBlockNumber).then(async () => {
-            if (valueBlockNumber.value) {
+            if (valueBlockNumber.value && jrp.value) {
               try {
-                let block = await jrp.send("eth_getBlockByNumber", [
+                let block = await jrp.value.send("eth_getBlockByNumber", [
                   valueBlockNumber.value,
                   false,
                 ]);
