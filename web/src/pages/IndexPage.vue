@@ -93,7 +93,7 @@
 </template>
 
 <script>
-import { defineComponent, ref, computed, onMounted } from "vue";
+import { defineComponent, ref, computed, onMounted, onUnmounted } from "vue";
 import EthereumInfo from "components/EthereumInfo.vue";
 import OptionTitle from "components/OptionTitle.vue";
 import NodeInfoItem from "components/NodeInfoItem.vue";
@@ -135,6 +135,7 @@ export default defineComponent({
     let baseDataNetInfo = ref("");
 
     let adminNodeInfo = ref("");
+    let blockNumberInterval = null; // 区块号刷新定时器
 
     let clientStatus = ref(""); // client status
     let valueBlockNumberShow = computed(() =>
@@ -269,61 +270,75 @@ export default defineComponent({
 
       fetchData("net_peerCount", valuePeerCount);
 
-      // Fetch latest block time on mount
-      fetchData("eth_blockNumber", valueBlockNumber).then(async () => {
-        if (valueBlockNumber.value) {
+      // 定义获取区块时间的函数
+      const fetchBlockTime = async () => {
+        if (!valueBlockNumber.value || !jrp.value) return;
+        
+        try {
+          let block = null;
           try {
-            // 使用 fetchData 或直接 fetch 来获取区块信息
-            let block = null;
-            try {
-              if (jrp.value) {
-                block = await jrp.value.send("eth_getBlockByNumber", [
-                  valueBlockNumber.value,
-                  false,
-                ]);
-              }
-            } catch (sendError) {
-              // 如果 send 失败，使用 fetch 直接调用
-              // 检查错误消息或错误类型
-              const isPrivateFieldError = 
-                (sendError && sendError.message && sendError.message.includes("private field")) ||
-                (sendError && sendError.toString && sendError.toString().includes("private field")) ||
-                (sendError && sendError.name === "TypeError");
-              
-              if (isPrivateFieldError) {
-                try {
-                  const response = await fetch(rpc.value, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                      jsonrpc: "2.0",
-                      method: "eth_getBlockByNumber",
-                      params: [valueBlockNumber.value, false],
-                      id: 1,
-                    }),
-                  });
-                  const data = await response.json();
-                  if (data.result) {
-                    block = data.result;
-                  }
-                } catch (fetchError) {
-                  console.error("Failed to fetch block via fetch:", fetchError);
-                }
-              } else {
-                throw sendError;
-              }
-            }
+            block = await jrp.value.send("eth_getBlockByNumber", [
+              valueBlockNumber.value,
+              false,
+            ]);
+          } catch (sendError) {
+            const isPrivateFieldError = 
+              (sendError && sendError.message && sendError.message.includes("private field")) ||
+              (sendError && sendError.toString && sendError.toString().includes("private field")) ||
+              (sendError && sendError.stack && sendError.stack.includes("private field"));
             
-            if (block && block.timestamp) {
-              valueBlockTime.value = new Date(
-                parseInt(block.timestamp, 16) * 1000
-              ).toLocaleString();
+            if (isPrivateFieldError) {
+              try {
+                const response = await fetch(rpc.value, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    jsonrpc: "2.0",
+                    method: "eth_getBlockByNumber",
+                    params: [valueBlockNumber.value, false],
+                    id: 1,
+                  }),
+                });
+                const data = await response.json();
+                if (data.result) {
+                  block = data.result;
+                }
+              } catch (fetchError) {
+                console.error("Failed to fetch block via fetch:", fetchError);
+              }
             }
-          } catch (error) {
-            console.error("Failed to fetch block time:", error);
           }
+          
+          if (block && block.timestamp) {
+            valueBlockTime.value = new Date(
+              parseInt(block.timestamp, 16) * 1000
+            ).toLocaleString();
+          }
+        } catch (error) {
+          console.error("Failed to fetch block time:", error);
         }
-      });
+      };
+
+      // 定义刷新区块号的函数
+      const refreshBlockNumber = async () => {
+        if (!jrp.value) return;
+        try {
+          await fetchData("eth_blockNumber", valueBlockNumber);
+          await fetchBlockTime();
+        } catch (error) {
+          console.error("Failed to refresh block number:", error);
+        }
+      };
+
+      // 初始获取区块号和区块时间
+      refreshBlockNumber();
+
+      // 设置定时刷新区块号（每10秒刷新一次，仅在页面可见时）
+      blockNumberInterval = setInterval(() => {
+        if (document.visibilityState === "visible") {
+          refreshBlockNumber();
+        }
+      }, 10000);
 
       // fetchData("eth_hashrate", valueHashrate);
       // fetchData("eth_gasPrice", valueGasPrice);
@@ -333,67 +348,22 @@ export default defineComponent({
       //     (valueBlockNumber.value = parseInt(valueBlockNumber.value));
       // });
 
+      // 页面可见性变化时立即刷新
       window.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "visible") {
-          fetchData("eth_blockNumber", valueBlockNumber).then(async () => {
-            if (valueBlockNumber.value) {
-              try {
-                // 使用 fetchData 或直接 fetch 来获取区块信息
-                let block = null;
-                try {
-                  if (jrp.value) {
-                    block = await jrp.value.send("eth_getBlockByNumber", [
-                      valueBlockNumber.value,
-                      false,
-                    ]);
-                  }
-                } catch (sendError) {
-                  // 如果 send 失败，使用 fetch 直接调用
-                  // 检查错误消息或错误类型
-                  const isPrivateFieldError = 
-                    (sendError && sendError.message && sendError.message.includes("private field")) ||
-                    (sendError && sendError.toString && sendError.toString().includes("private field")) ||
-                    (sendError && sendError.name === "TypeError");
-                  
-                  if (isPrivateFieldError) {
-                    try {
-                      const response = await fetch(rpc.value, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                          jsonrpc: "2.0",
-                          method: "eth_getBlockByNumber",
-                          params: [valueBlockNumber.value, false],
-                          id: 1,
-                        }),
-                      });
-                      const data = await response.json();
-                      if (data.result) {
-                        block = data.result;
-                      }
-                    } catch (fetchError) {
-                      console.error("Failed to fetch block via fetch:", fetchError);
-                    }
-                  } else {
-                    throw sendError;
-                  }
-                }
-
-                valueBlock.value = block;
-                if (block && block.timestamp) {
-                  valueBlockTime.value = new Date(
-                    parseInt(block.timestamp, 16) * 1000
-                  ).toLocaleString();
-                }
-              } catch (error) {
-                console.error("Failed to fetch block time:", error);
-              }
-            }
-          });
+          refreshBlockNumber();
         }
       });
       } catch (error) {
         console.error("Failed to initialize RPC provider:", error);
+      }
+    });
+
+    // 组件卸载时清理定时器
+    onUnmounted(() => {
+      if (blockNumberInterval) {
+        clearInterval(blockNumberInterval);
+        blockNumberInterval = null;
       }
     });
 
