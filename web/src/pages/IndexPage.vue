@@ -180,7 +180,13 @@ export default defineComponent({
             resolve();
           } catch (sendError) {
             // 忽略浏览器扩展相关的错误
-            if (sendError && sendError.message && sendError.message.includes("private field")) {
+            // 检查错误消息或错误类型
+            const isPrivateFieldError = 
+              (sendError && sendError.message && sendError.message.includes("private field")) ||
+              (sendError && sendError.toString && sendError.toString().includes("private field")) ||
+              (sendError && sendError.stack && sendError.stack.includes("private field"));
+            
+            if (isPrivateFieldError) {
               console.warn("Browser extension error ignored:", sendError);
               // 尝试使用 fetch 直接调用 RPC
               try {
@@ -265,12 +271,49 @@ export default defineComponent({
 
       // Fetch latest block time on mount
       fetchData("eth_blockNumber", valueBlockNumber).then(async () => {
-        if (valueBlockNumber.value && jrp.value) {
+        if (valueBlockNumber.value) {
           try {
-            let block = await jrp.value.send("eth_getBlockByNumber", [
-              valueBlockNumber.value,
-              false,
-            ]);
+            // 使用 fetchData 或直接 fetch 来获取区块信息
+            let block = null;
+            try {
+              if (jrp.value) {
+                block = await jrp.value.send("eth_getBlockByNumber", [
+                  valueBlockNumber.value,
+                  false,
+                ]);
+              }
+            } catch (sendError) {
+              // 如果 send 失败，使用 fetch 直接调用
+              // 检查错误消息或错误类型
+              const isPrivateFieldError = 
+                (sendError && sendError.message && sendError.message.includes("private field")) ||
+                (sendError && sendError.toString && sendError.toString().includes("private field")) ||
+                (sendError && sendError.stack && sendError.stack.includes("private field"));
+              
+              if (isPrivateFieldError) {
+                try {
+                  const response = await fetch(rpc.value, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      jsonrpc: "2.0",
+                      method: "eth_getBlockByNumber",
+                      params: [valueBlockNumber.value, false],
+                      id: 1,
+                    }),
+                  });
+                  const data = await response.json();
+                  if (data.result) {
+                    block = data.result;
+                  }
+                } catch (fetchError) {
+                  console.error("Failed to fetch block via fetch:", fetchError);
+                }
+              } else {
+                throw sendError;
+              }
+            }
+            
             if (block && block.timestamp) {
               valueBlockTime.value = new Date(
                 parseInt(block.timestamp, 16) * 1000
@@ -293,12 +336,48 @@ export default defineComponent({
       window.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "visible") {
           fetchData("eth_blockNumber", valueBlockNumber).then(async () => {
-            if (valueBlockNumber.value && jrp.value) {
+            if (valueBlockNumber.value) {
               try {
-                let block = await jrp.value.send("eth_getBlockByNumber", [
-                  valueBlockNumber.value,
-                  false,
-                ]);
+                // 使用 fetchData 或直接 fetch 来获取区块信息
+                let block = null;
+                try {
+                  if (jrp.value) {
+                    block = await jrp.value.send("eth_getBlockByNumber", [
+                      valueBlockNumber.value,
+                      false,
+                    ]);
+                  }
+                } catch (sendError) {
+                  // 如果 send 失败，使用 fetch 直接调用
+                  // 检查错误消息或错误类型
+                  const isPrivateFieldError = 
+                    (sendError && sendError.message && sendError.message.includes("private field")) ||
+                    (sendError && sendError.toString && sendError.toString().includes("private field")) ||
+                    (sendError && sendError.name === "TypeError");
+                  
+                  if (isPrivateFieldError) {
+                    try {
+                      const response = await fetch(rpc.value, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          jsonrpc: "2.0",
+                          method: "eth_getBlockByNumber",
+                          params: [valueBlockNumber.value, false],
+                          id: 1,
+                        }),
+                      });
+                      const data = await response.json();
+                      if (data.result) {
+                        block = data.result;
+                      }
+                    } catch (fetchError) {
+                      console.error("Failed to fetch block via fetch:", fetchError);
+                    }
+                  } else {
+                    throw sendError;
+                  }
+                }
 
                 valueBlock.value = block;
                 if (block && block.timestamp) {
