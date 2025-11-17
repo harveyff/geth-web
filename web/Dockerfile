@@ -4,7 +4,14 @@ RUN mkdir workerDir
 COPY ./ ./workerDir/
 
 WORKDIR /workerDir
-RUN yarn install
+
+# 配置 yarn 网络超时和重试
+RUN yarn config set network-timeout 600000
+RUN yarn config set network-concurrency 1
+
+# 安装依赖（增加重试机制）
+RUN yarn install --network-timeout 600000 || yarn install --network-timeout 600000 || yarn install --network-timeout 600000
+
 RUN yarn global add @quasar/cli
 RUN quasar build
 
